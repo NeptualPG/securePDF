@@ -1,0 +1,109 @@
+openapi: 3.0.3
+info:
+  title: SecurePDF Conversion API
+  version: 1.0.0
+  description: Converts supported documents and images into PDF files.
+servers:
+  - url: http://localhost:3000
+    description: Local Docker development
+paths:
+  /api/v1/health:
+    get:
+      operationId: getHealth
+      summary: Check API availability
+      responses:
+        '200':
+          description: The API is available.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Ok
+  /api/v1/convert:
+    post:
+      operationId: convertFile
+      summary: Convert a file to PDF
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - target_format
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: A supported source document or image.
+                target_format:
+                  type: string
+                  enum:
+                    - pdf
+                  description: The desired output format.
+                options:
+                  type: string
+                  description: Optional JSON object, for example {"quality":"high","ocr":false}.
+                  example: '{"quality":"high","ocr":false}'
+      responses:
+        '200':
+          description: The converted PDF.
+          headers:
+            Content-Disposition:
+              description: Attachment filename for the converted PDF.
+              schema:
+                type: string
+                example: attachment; filename="converted.pdf"
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/InvalidFile'
+        '413':
+          description: The request exceeds the configured upload limit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Payload too large
+                code: PAYLOAD_TOO_LARGE
+        '422':
+          description: The source format is not supported.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Unsupported source format
+                code: UNSUPPORTED_FORMAT
+components:
+  responses:
+    InvalidFile:
+      description: The upload is missing, malformed, or fails file validation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: A valid file is required
+            code: INVALID_FILE
+  schemas:
+    Error:
+      type: object
+      required:
+        - error
+        - code
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          enum:
+            - INVALID_FILE
+            - PAYLOAD_TOO_LARGE
+            - UNSUPPORTED_FORMAT
+            - CONVERSION_FAILED

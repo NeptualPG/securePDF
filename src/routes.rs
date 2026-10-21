@@ -1,11 +1,28 @@
-use axum::{routing::get, Router};
+use axum::{http::HeaderValue, routing::{get, post}, Router};
+use tower_http::{
+    cors::CorsLayer,
+    limit::RequestBodyLimitLayer,
+    trace::TraceLayer,
+};
 
-use crate::handlers::{create_task, get_task, health, list_tasks, root};
+use crate::{config::Config, handlers};
 
-pub fn router() -> Router {
+pub fn build_router(config: &Config) -> Router {
+    let allowed_origins: Vec<HeaderValue> = config
+        .cors_origins
+        .iter()
+        .filter_map(|origin| origin.parse().ok())
+        .collect();
+    let cors = CorsLayer::new()
+        .allow_origin(allowed_origins)
+        .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
+        .allow_headers([axum::http::header::CONTENT_TYPE]);
+
     Router::new()
-        .route("/", get(root))
-        .route("/health", get(health))
-        .route("/tasks", get(list_tasks).post(create_task))
-        .route("/tasks/{id}", get(get_task))
+        .route("/api/v1/health", get(handlers::health))
+        .route("/api/v1/convert", post(handlers::convert))
+        .layer(RequestBodyLimitLayer::new(config.max_upload_bytes))
+        .layer(cors)
+        .layer(TraceLayer::new_for_http())
+        .with_state(config.clone())
 }

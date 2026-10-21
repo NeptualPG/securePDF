@@ -7,12 +7,19 @@ mod validation;
 
 #[tokio::main]
 async fn main() {
-    let app = routes::router();
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
+    tracing_subscriber::fmt()
+        .with_env_filter("info,axum=debug")
+        .init();
+    let config = config::Config::from_env();
+    std::fs::create_dir_all(&config.temp_dir).expect("failed to create temporary directory");
+    let address = format!("0.0.0.0:{}", config.port);
+    let listener = tokio::net::TcpListener::bind(&address)
         .await
         .unwrap();
 
-    println!("task running on http://localhost:3000");
+    tracing::info!(%address, "SecurePDF backend listening");
 
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, routes::build_router(&config))
+        .await
+        .unwrap();
 }

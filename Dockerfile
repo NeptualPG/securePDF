@@ -12,7 +12,14 @@ RUN touch src/main.rs && cargo build --release
 FROM debian:bookworm-slim
 
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y ca-certificates wget \
+    && apt-get install --no-install-recommends -y \
+        ca-certificates \
+        wget \
+        libreoffice-core \
+        libreoffice-writer \
+        libreoffice-calc \
+        libreoffice-impress \
+        imagemagick \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/securePDF /usr/local/bin/securePDF
