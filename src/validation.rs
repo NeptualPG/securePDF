@@ -228,6 +228,35 @@ mod tests {
         assert!(error.to_string().contains("empty"));
     }
 
+    fn zip_with_entry(entry: &str) -> tempfile::NamedTempFile {
+        let file = tempfile::NamedTempFile::new().expect("temp file");
+        let mut archive = zip::ZipWriter::new(file.reopen().expect("reopen temp file"));
+        archive
+            .start_file(entry, zip::write::SimpleFileOptions::default())
+            .expect("start zip entry");
+        archive.write_all(b"<xml/>").expect("write zip entry");
+        archive.finish().expect("finish zip");
+        file
+    }
+
+    #[test]
+    fn accepts_docx_with_document_entry() {
+        let file = zip_with_entry("word/document.xml");
+        let size = file.as_file().metadata().expect("metadata").len() as usize;
+        let accepted =
+            validate_upload("report.docx", file.path(), size, 1024 * 1024).expect("valid DOCX");
+        assert!(matches!(accepted.source_kind, FileKind::Office));
+    }
+
+    #[test]
+    fn rejects_docx_without_document_entry() {
+        let file = zip_with_entry("other.xml");
+        let size = file.as_file().metadata().expect("metadata").len() as usize;
+        let error = validate_upload("report.docx", file.path(), size, 1024 * 1024)
+            .expect_err("DOCX without content should be rejected");
+        assert!(error.to_string().contains("docx"));
+    }
+
     #[test]
     fn detects_password_protected_pdf() {
         let mut file = tempfile::NamedTempFile::new().expect("temp file");

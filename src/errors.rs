@@ -1,5 +1,6 @@
 use axum::{
     Json,
+    extract::multipart::MultipartError,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -24,6 +25,17 @@ pub enum AppError {
     Io(#[from] std::io::Error),
     #[error("multipart error: {0}")]
     Multipart(String),
+}
+
+impl From<MultipartError> for AppError {
+    fn from(error: MultipartError) -> Self {
+        // The body limit surfaces as a multipart read error with status 413.
+        if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
+            Self::PayloadTooLarge
+        } else {
+            Self::Multipart(error.body_text())
+        }
+    }
 }
 
 #[derive(Serialize)]

@@ -25,6 +25,12 @@ RUN apt-get update \
         python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
+# Debian's ImageMagick policy blocks every PDF operation. Allow writing PDFs
+# (image to PDF) but keep reading them blocked, since PDF input goes through
+# Ghostscript and is the risky direction.
+RUN sed -i 's/rights="none" pattern="PDF"/rights="write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml \
+    && grep -q 'rights="write" pattern="PDF"' /etc/ImageMagick-6/policy.xml
+
 RUN pip3 install --no-cache-dir --break-system-packages pdf2docx
 
 COPY --from=builder /app/target/release/securePDF /usr/local/bin/securePDF
