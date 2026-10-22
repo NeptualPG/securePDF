@@ -13,9 +13,7 @@ async fn main() {
     let config = config::Config::from_env();
     std::fs::create_dir_all(&config.temp_dir).expect("failed to create temporary directory");
     let address = format!("0.0.0.0:{}", config.port);
-    let listener = tokio::net::TcpListener::bind(&address)
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind(&address).await.unwrap();
 
     tracing::info!(%address, "SecurePDF backend listening");
 

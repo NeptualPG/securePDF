@@ -1,9 +1,9 @@
-use axum::{http::HeaderValue, routing::{get, post}, Router};
-use tower_http::{
-    cors::CorsLayer,
-    limit::RequestBodyLimitLayer,
-    trace::TraceLayer,
+use axum::{
+    Router,
+    http::HeaderValue,
+    routing::{get, post},
 };
+use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLayer};
 
 use crate::{config::Config, handlers};
 

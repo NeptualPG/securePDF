@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: SecurePDF Conversion API
-  version: 1.0.0
-  description: Converts supported documents and images into PDF files.
+  version: 1.1.0
+  description: Converts supported documents and images between the supported PDF formats.
 servers:
   - url: http://localhost:3000
     description: Local Docker development
@@ -10,7 +10,6 @@ paths:
   /api/v1/health:
     get:
       operationId: getHealth
-      summary: Check API availability
       responses:
         '200':
           description: The API is available.
@@ -18,92 +17,73 @@ paths:
             text/plain:
               schema:
                 type: string
-                example: Ok
+                example: ok
   /api/v1/convert:
     post:
       operationId: convertFile
-      summary: Convert a file to PDF
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
-              required:
-                - file
-                - target_format
+              required: [file, target_format]
               properties:
                 file:
                   type: string
                   format: binary
-                  description: A supported source document or image.
                 target_format:
                   type: string
-                  enum:
-                    - pdf
-                  description: The desired output format.
+                  enum: [pdf, doc, docx, rtf, odt, xls, xlsx, ods, ppt, pptx, odp, png, jpg]
                 options:
                   type: string
-                  description: Optional JSON object, for example {"quality":"high","ocr":false}.
-                  example: '{"quality":"high","ocr":false}'
+                  description: JSON options. PDF image conversion supports page and dpi; PDF to DOCX supports preserve_layout.
+                  example: '{"page":1,"dpi":150}'
       responses:
         '200':
-          description: The converted PDF.
+          description: Converted binary file.
           headers:
             Content-Disposition:
-              description: Attachment filename for the converted PDF.
               schema:
                 type: string
-                example: attachment; filename="converted.pdf"
           content:
             application/pdf:
-              schema:
-                type: string
-                format: binary
+              schema: { type: string, format: binary }
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+            image/jpeg:
+              schema: { type: string, format: binary }
         '400':
           $ref: '#/components/responses/InvalidFile'
         '413':
-          description: The request exceeds the configured upload limit.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Payload too large
-                code: PAYLOAD_TOO_LARGE
+          $ref: '#/components/responses/PayloadTooLarge'
         '422':
-          description: The source format is not supported.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-              example:
-                error: Unsupported source format
-                code: UNSUPPORTED_FORMAT
+          $ref: '#/components/responses/UnsupportedFormat'
 components:
   responses:
     InvalidFile:
-      description: The upload is missing, malformed, or fails file validation.
+      description: Validation or malformed request error.
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: A valid file is required
-            code: INVALID_FILE
+          schema: { $ref: '#/components/schemas/Error' }
+    PayloadTooLarge:
+      description: The request exceeds the configured upload limit.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    UnsupportedFormat:
+      description: The source-to-target conversion pair is unsupported.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
   schemas:
     Error:
       type: object
-      required:
-        - error
-        - code
+      required: [error, code]
       properties:
-        error:
-          type: string
+        error: { type: string }
         code:
           type: string
-          enum:
-            - INVALID_FILE
-            - PAYLOAD_TOO_LARGE
-            - UNSUPPORTED_FORMAT
-            - CONVERSION_FAILED
+          enum: [INVALID_FILE, MISSING_FILE, MISSING_FIELD, INVALID_OPTIONS, PAYLOAD_TOO_LARGE, UNSUPPORTED_FORMAT, CONVERSION_FAILED]

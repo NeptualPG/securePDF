@@ -14,7 +14,15 @@ pub enum FileKind {
 #[derive(Debug)]
 pub struct AcceptedFile {
     pub extension: String,
-    pub kind: FileKind,
+    pub source_kind: FileKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum ConversionPath {
+    Office { target: String },
+    ImageToPdf,
+    PdfToDocx,
+    PdfToImage { target: String },
 }
 
 pub fn validate_upload(
@@ -25,6 +33,9 @@ pub fn validate_upload(
 ) -> Result<AcceptedFile, AppError> {
     if size > max_size {
         return Err(AppError::PayloadTooLarge);
+    }
+    if size == 0 {
+        return Err(invalid("EMPTY_FILE", "The uploaded file is empty"));
     }
 
     let extension = Path::new(file_name)
@@ -41,13 +52,30 @@ pub fn validate_upload(
     let kind = match extension.as_str() {
         "pdf" => {
             if !bytes.starts_with(b"%PDF-") {
-                return Err(invalid("INVALID_FILE", "The file is not a valid PDF"));
+                return Err(invalid("CORRUPT_FILE", "The file is not a valid PDF"));
+            }
+            let all_bytes = std::fs::read(path)?;
+            if all_bytes
+                .windows(b"/Encrypt".len())
+                .any(|window| window == b"/Encrypt")
+            {
+                return Err(AppError::PasswordProtected);
             }
             FileKind::Pdf
         }
-        "jpg" | "jpeg" => {
-            if detected.as_deref() != Some("image/jpeg") {
-                return Err(invalid("INVALID_FILE", "The file is not a valid JPEG image"));
+        "jpg" | "jpeg" | "webp" | "gif" | "bmp" => {
+            let expected = match extension.as_str() {
+                "jpg" | "jpeg" => "image/jpeg",
+                "webp" => "image/webp",
+                "gif" => "image/gif",
+                "bmp" => "image/bmp",
+                _ => unreachable!(),
+            };
+            if detected.as_deref() != Some(expected) {
+                return Err(invalid(
+                    "CORRUPT_FILE",
+                    "The file contents do not match its extension",
+                ));
             }
             FileKind::Image
         }
@@ -59,11 +87,25 @@ pub fn validate_upload(
         }
         "docx" => validate_zip_office(&mut file, bytes, "word/document.xml", "docx")?,
         "xlsx" => validate_zip_office(&mut file, bytes, "xl/workbook.xml", "xlsx")?,
+        "ods" => validate_zip_office(&mut file, bytes, "content.xml", "ods")?,
         "pptx" => validate_zip_office(&mut file, bytes, "ppt/presentation.xml", "pptx")?,
+        "odp" => validate_zip_office(&mut file, bytes, "content.xml", "odp")?,
         "odt" => validate_zip_office(&mut file, bytes, "mimetype", "odt")?,
+        "rtf" => {
+            if !bytes.starts_with(b"{\\rtf") {
+                return Err(invalid(
+                    "CORRUPT_FILE",
+                    "The file is not a valid RTF document",
+                ));
+            }
+            FileKind::Office
+        }
         "doc" | "xls" | "ppt" => {
             if !bytes.starts_with(&[0xD0, 0xCF, 0x11, 0xE0]) {
-                return Err(invalid("INVALID_FILE", "The file is not a valid Office document"));
+                return Err(invalid(
+                    "CORRUPT_FILE",
+                    "The file contents do not match its extension",
+                ));
             }
             FileKind::Office
         }
@@ -74,7 +116,53 @@ pub fn validate_upload(
         }
     };
 
-    Ok(AcceptedFile { extension, kind })
+    Ok(AcceptedFile {
+        extension,
+        source_kind: kind,
+    })
+}
+
+pub fn validate_conversion(
+    accepted: &AcceptedFile,
+    target: &str,
+) -> Result<ConversionPath, AppError> {
+    let supported = match (accepted.source_kind, accepted.extension.as_str(), target) {
+        (FileKind::Office, _, target)
+            if matches!(
+                target,
+                "pdf"
+                    | "docx"
+                    | "doc"
+                    | "rtf"
+                    | "odt"
+                    | "xlsx"
+                    | "xls"
+                    | "ods"
+                    | "pptx"
+                    | "ppt"
+                    | "odp"
+            ) =>
+        {
+            Some(ConversionPath::Office {
+                target: target.into(),
+            })
+        }
+        (FileKind::Image, "jpg" | "jpeg" | "png" | "webp" | "gif" | "bmp", "pdf") => {
+            Some(ConversionPath::ImageToPdf)
+        }
+        (FileKind::Pdf, "pdf", "docx") => Some(ConversionPath::PdfToDocx),
+        (FileKind::Pdf, "pdf", "png" | "jpg") => Some(ConversionPath::PdfToImage {
+            target: target.into(),
+        }),
+        _ => None,
+    };
+
+    supported.ok_or_else(|| AppError::UnsupportedFormat {
+        mime: format!(
+            "conversion .{} -> .{} not supported",
+            accepted.extension, target
+        ),
+    })
 }
 
 fn validate_zip_office(
@@ -91,10 +179,10 @@ fn validate_zip_office(
     }
     file.seek(SeekFrom::Start(0))?;
     let mut archive = zip::ZipArchive::new(file)
-        .map_err(|_| invalid("INVALID_FILE", "The Office archive is malformed"))?;
+        .map_err(|_| invalid("CORRUPT_FILE", "The Office archive is malformed"))?;
     if archive.by_name(required_entry).is_err() {
         return Err(invalid(
-            "INVALID_FILE",
+            "CORRUPT_FILE",
             &format!("The file does not contain the required {extension} content"),
         ));
     }
@@ -112,15 +200,15 @@ fn invalid(code: &str, detail: &str) -> AppError {
 mod tests {
     use std::io::Write;
 
-    use super::{validate_upload, FileKind};
+    use super::{FileKind, validate_upload};
 
     #[test]
     fn accepts_pdf_magic_bytes() {
         let mut file = tempfile::NamedTempFile::new().expect("temp file");
-        file.write_all(b"%PDF-1.7\n").expect("write PDF header");
-        let accepted =
-            validate_upload("document.pdf", file.path(), 9, 1024).expect("valid PDF");
-        assert!(matches!(accepted.kind, FileKind::Pdf));
+        file.write_all(b"%PDF-1.7\n% valid test fixture with enough bytes\n")
+            .expect("write PDF header");
+        let accepted = validate_upload("document.pdf", file.path(), 49, 1024).expect("valid PDF");
+        assert!(matches!(accepted.source_kind, FileKind::Pdf));
     }
 
     #[test]
@@ -130,5 +218,23 @@ mod tests {
         let error = validate_upload("document.pdf", file.path(), 9, 1024)
             .expect_err("invalid PDF should be rejected");
         assert!(error.to_string().contains("valid PDF"));
+    }
+
+    #[test]
+    fn rejects_empty_upload_with_a_specific_code() {
+        let file = tempfile::NamedTempFile::new().expect("temp file");
+        let error = validate_upload("empty.pdf", file.path(), 0, 1024)
+            .expect_err("empty file should be rejected");
+        assert!(error.to_string().contains("empty"));
+    }
+
+    #[test]
+    fn detects_password_protected_pdf() {
+        let mut file = tempfile::NamedTempFile::new().expect("temp file");
+        file.write_all(b"%PDF-1.7\n/Encrypt 7 0 R\ntrailer\n")
+            .expect("write protected PDF marker");
+        let error = validate_upload("protected.pdf", file.path(), 33, 1024)
+            .expect_err("protected PDF should be rejected");
+        assert!(matches!(error, crate::errors::AppError::PasswordProtected));
     }
 }

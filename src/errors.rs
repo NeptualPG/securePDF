@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde::Serialize;
 use thiserror::Error;
@@ -16,6 +16,10 @@ pub enum AppError {
     UnsupportedFormat { mime: String },
     #[error("conversion failed: {0}")]
     ConversionFailed(String),
+    #[error("conversion timed out")]
+    ConversionTimeout,
+    #[error("the file is password protected")]
+    PasswordProtected,
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("multipart error: {0}")]
@@ -40,12 +44,22 @@ impl IntoResponse for AppError {
             Self::UnsupportedFormat { mime } => (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "UNSUPPORTED_FORMAT".into(),
-                format!("Source format '{mime}' cannot be converted to PDF"),
+                format!("Unsupported file format or conversion: '{mime}'"),
             ),
             Self::ConversionFailed(message) => (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "CONVERSION_FAILED".into(),
                 message,
+            ),
+            Self::ConversionTimeout => (
+                StatusCode::GATEWAY_TIMEOUT,
+                "CONVERSION_TIMEOUT".into(),
+                "This file is taking too long to convert".into(),
+            ),
+            Self::PasswordProtected => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "PASSWORD_PROTECTED".into(),
+                "This file is password-protected".into(),
             ),
             Self::Io(error) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -59,6 +73,13 @@ impl IntoResponse for AppError {
             ),
         };
 
-        (status, Json(ErrorBody { error: message, code })).into_response()
+        (
+            status,
+            Json(ErrorBody {
+                error: message,
+                code,
+            }),
+        )
+            .into_response()
     }
 }

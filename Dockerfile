@@ -20,9 +20,17 @@ RUN apt-get update \
         libreoffice-calc \
         libreoffice-impress \
         imagemagick \
+        poppler-utils \
+        python3 \
+        python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
+RUN pip3 install --no-cache-dir --break-system-packages pdf2docx
+
 COPY --from=builder /app/target/release/securePDF /usr/local/bin/securePDF
+COPY scripts/convert_pdf_to_docx.py /app/scripts/convert_pdf_to_docx.py
+
+ENV PDF2DOCX_SCRIPT_PATH=/app/scripts/convert_pdf_to_docx.py
 
 EXPOSE 3000
 USER 10001:10001

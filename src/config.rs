@@ -7,6 +7,9 @@ pub struct Config {
     pub temp_dir: String,
     pub libreoffice_path: String,
     pub imagemagick_path: String,
+    pub pdftoppm_path: String,
+    pub python_path: String,
+    pub pdf2docx_script_path: String,
     pub cors_origins: Vec<String>,
     pub conversion_timeout_secs: u64,
 }
@@ -24,10 +27,12 @@ impl Config {
                 .unwrap_or(25)
                 .saturating_mul(1024 * 1024),
             temp_dir: env::var("TEMP_DIR").unwrap_or_else(|_| "/tmp/pdf-converter".into()),
-            libreoffice_path: env::var("LIBREOFFICE_PATH")
-                .unwrap_or_else(|_| "soffice".into()),
-            imagemagick_path: env::var("IMAGEMAGICK_PATH")
-                .unwrap_or_else(|_| "convert".into()),
+            libreoffice_path: env::var("LIBREOFFICE_PATH").unwrap_or_else(|_| "soffice".into()),
+            imagemagick_path: env::var("IMAGEMAGICK_PATH").unwrap_or_else(|_| "convert".into()),
+            pdftoppm_path: env::var("PDFTOPPM_PATH").unwrap_or_else(|_| "pdftoppm".into()),
+            python_path: env::var("PYTHON_PATH").unwrap_or_else(|_| "python3".into()),
+            pdf2docx_script_path: env::var("PDF2DOCX_SCRIPT_PATH")
+                .unwrap_or_else(|_| "scripts/convert_pdf_to_docx.py".into()),
             cors_origins: env::var("CORS_ORIGINS")
                 .unwrap_or_else(|_| "http://localhost:5173".into())
                 .split(',')
