@@ -13,7 +13,6 @@ use crate::{config::Config, conversion, errors::AppError, validation};
 struct ConversionOptions {
     page: Option<u32>,
     dpi: Option<u32>,
-    preserve_layout: Option<bool>,
 }
 
 pub async fn convert(
@@ -25,6 +24,7 @@ pub async fn convert(
     let temp_dir = tempfile::TempDir::new_in(&config.temp_dir)?;
     let mut input_path = None;
     let mut filename = None;
+    let mut file_seen = false;
     let mut size = 0_usize;
 
     while let Some(mut field) = multipart
@@ -34,6 +34,13 @@ pub async fn convert(
     {
         match field.name().unwrap_or_default() {
             "file" => {
+                if file_seen {
+                    return Err(AppError::InvalidFile {
+                        code: "DUPLICATE_FILE".into(),
+                        detail: "only one 'file' field is allowed".into(),
+                    });
+                }
+                file_seen = true;
                 let original_name = field
                     .file_name()
                     .ok_or_else(|| AppError::InvalidFile {
@@ -50,6 +57,7 @@ pub async fn convert(
                     .path()
                     .join(format!("input-{}.{}", Uuid::new_v4(), extension));
                 let mut input = tokio::fs::File::create(&path).await?;
+                size = 0;
                 while let Some(chunk) = field
                     .chunk()
                     .await
@@ -114,7 +122,6 @@ pub async fn convert(
             detail: "target_format is required".into(),
         })?;
     let path = validation::validate_conversion(&accepted, &target)?;
-    let _preserve_layout = options.preserve_layout.unwrap_or(true);
     let output_path = match path {
         validation::ConversionPath::Office { target } => {
             tracing::info!(extension = %accepted.extension, "converting office document");
