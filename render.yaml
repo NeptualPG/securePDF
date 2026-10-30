@@ -1,0 +1,18 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: securepdf-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: MAX_UPLOAD_MB
+        value: "25"
+      # The Netlify frontend proxies /api/* to this service, so browsers make
+      # same-origin requests. Add origins here only for direct cross-origin calls.
+      - key: CORS_ORIGINS
+        value: http://localhost:5173

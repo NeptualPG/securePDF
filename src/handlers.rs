@@ -27,11 +27,7 @@ pub async fn convert(
     let mut file_seen = false;
     let mut size = 0_usize;
 
-    while let Some(mut field) = multipart
-        .next_field()
-        .await
-        .map_err(|error| AppError::Multipart(error.to_string()))?
-    {
+    while let Some(mut field) = multipart.next_field().await? {
         match field.name().unwrap_or_default() {
             "file" => {
                 if file_seen {
@@ -57,12 +53,16 @@ pub async fn convert(
                     .path()
                     .join(format!("input-{}.{}", Uuid::new_v4(), extension));
                 let mut input = tokio::fs::File::create(&path).await?;
+<<<<<<< HEAD
                 size = 0;
                 while let Some(chunk) = field
                     .chunk()
                     .await
                     .map_err(|error| AppError::Multipart(error.to_string()))?
                 {
+=======
+                while let Some(chunk) = field.chunk().await? {
+>>>>>>> c4f309b97d75aec7c946a9085e09632e0b596e33
                     size = size.saturating_add(chunk.len());
                     if size > config.max_upload_bytes {
                         return Err(AppError::PayloadTooLarge);
@@ -74,18 +74,10 @@ pub async fn convert(
                 input_path = Some(path);
             }
             "target_format" => {
-                target_format = Some(
-                    field
-                        .text()
-                        .await
-                        .map_err(|error| AppError::Multipart(error.to_string()))?,
-                );
+                target_format = Some(field.text().await?);
             }
             "options" => {
-                let options_json = field
-                    .text()
-                    .await
-                    .map_err(|error| AppError::Multipart(error.to_string()))?;
+                let options_json = field.text().await?;
                 if !options_json.trim().is_empty() {
                     options =
                         serde_json::from_str(&options_json).map_err(|_| AppError::InvalidFile {
@@ -94,14 +86,7 @@ pub async fn convert(
                         })?;
                 }
             }
-            _ => {
-                while field
-                    .chunk()
-                    .await
-                    .map_err(|error| AppError::Multipart(error.to_string()))?
-                    .is_some()
-                {}
-            }
+            _ => while field.chunk().await?.is_some() {},
         }
     }
 
@@ -113,8 +98,16 @@ pub async fn convert(
         code: "MISSING_FILE".into(),
         detail: "A 'file' field is required".into(),
     })?;
-    let accepted =
-        validation::validate_upload(&filename, &input_path, size, config.max_upload_bytes)?;
+    // Validation reads the file with blocking I/O, so keep it off the async workers.
+    let accepted = {
+        let (filename, input_path) = (filename.clone(), input_path.clone());
+        let max_upload_bytes = config.max_upload_bytes;
+        tokio::task::spawn_blocking(move || {
+            validation::validate_upload(&filename, &input_path, size, max_upload_bytes)
+        })
+        .await
+        .map_err(|error| AppError::ConversionFailed(error.to_string()))??
+    };
     let target = target_format
         .map(|value| value.trim().to_ascii_lowercase())
         .ok_or_else(|| AppError::InvalidFile {
